@@ -1,0 +1,8 @@
+gymnasium[mujoco]
+stable-baselines3
+moviepy
+numpy
+torch
+matplotlib
+scipy
+tqdm
