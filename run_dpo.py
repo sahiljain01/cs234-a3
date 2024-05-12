@@ -67,7 +67,11 @@ class ActionSequenceModel(nn.Module):
         self.segment_len = segment_len
         #######################################################
         #########   YOUR CODE HERE - 3-9 lines.    ############
-
+        input_dim = obs_dim + action_dim
+        # TODO: figure out action distribution sequence length
+        layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, segment_len)]
+        self.net = nn.Sequential(*layers)
+        self.optimizer = torch.optim.AdamW(self.net.parameters(), lr=lr)
         #######################################################
         #########          END YOUR CODE.          ############
 

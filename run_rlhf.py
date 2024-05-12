@@ -50,7 +50,10 @@ class RewardModel(nn.Module):
         super().__init__()
         #######################################################
         #########   YOUR CODE HERE - 2-10 lines.   ############
-
+        input_dim = obs_dim + action_dim
+        layers = [nn.Linear(input_dim, hidden_dim), nn.LeakyReLU(), nn.Linear(hidden_dim, 1), nn.Softmax()]
+        self.net = nn.Sequential(*layers)
+        self.optimizer = torch.optim.AdamW(self.net.parameters())
         #######################################################
         #########          END YOUR CODE.          ############
         self.r_min = r_min
@@ -89,7 +92,12 @@ class RewardModel(nn.Module):
         rewards = torch.zeros(obs.shape[0])
         #######################################################
         #########   YOUR CODE HERE - 2-3 lines.   ############
-
+        input = torch.cat((obs, action), 1)
+        rewards = self.net.forward(input)
+        # rewards += self.r_min
+        rewards = torch.add(rewards, self.r_min)
+        rewards = torch.mul(rewards, (self.r_max - self.r_min))
+        # rewards *= (self.r_max - self.r_min)
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -121,7 +129,11 @@ class RewardModel(nn.Module):
         """
         #######################################################
         #########   YOUR CODE HERE - 1-4 lines.   ############
-
+        obs, action = np2torch(obs), np2torch(action)
+        obs, action = torch.unsqueeze(obs, 0), torch.unsqueeze(action, 0)
+        reward = self.forward(obs, action)
+        # import pdb; pdb.set_trace()
+        return reward.item()
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -146,7 +158,20 @@ class RewardModel(nn.Module):
         loss = torch.zeros(1)
         #######################################################
         #########   YOUR CODE HERE - 5-10 lines.   ############
+        predicted_reward_trajectory_1 = self.forward(obs1, act1)
+        predicted_reward_trajectory_2 = self.forward(obs2, act2)
 
+        def bradley_terry_reward(reward_trajectory_1, reward_trajectory_2):
+            exp_rewards_term1 = torch.exp(torch.sum(reward_trajectory_1, axis=1))
+            exp_rewards_term2 = torch.exp(torch.sum(reward_trajectory_2, axis=1))
+            return exp_rewards_term1, exp_rewards_term2
+
+        p_1g2, p_2g1 = bradley_terry_reward(predicted_reward_trajectory_1, predicted_reward_trajectory_2)
+        p_stacked = torch.stack((p_1g2, p_2g1), axis=1)
+       #  p_stacked = p_stacked.type(torch.LongTensor)
+#         import pdb; pdb.set_trace()
+
+        loss = torch.nn.functional.cross_entropy(p_stacked, label.long())
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -260,6 +285,7 @@ def main(args):
         custom_reward_env,
         lambda obs: agent.predict(obs)[0],
     )
+    # import pdb; pdb.set_trace()
     agent.learn(args.rl_steps, callback=eval_callback)
 
     # Log the results

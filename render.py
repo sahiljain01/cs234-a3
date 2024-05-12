@@ -30,7 +30,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     env = gym.make("Hopper-v4", terminate_when_unhealthy=False, render_mode="rgb_array")
-
+    env.reset()
     if args.checkpoint:
         if args.dpo:
             from run_dpo import SFT, DPO
