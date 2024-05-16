@@ -51,7 +51,7 @@ class RewardModel(nn.Module):
         #######################################################
         #########   YOUR CODE HERE - 2-10 lines.   ############
         input_dim = obs_dim + action_dim
-        layers = [nn.Linear(input_dim, hidden_dim), nn.LeakyReLU(), nn.Linear(hidden_dim, 1), nn.Softmax()]
+        layers = [nn.Linear(input_dim, hidden_dim), nn.LeakyReLU(), nn.Linear(hidden_dim, 1), nn.Sigmoid()]
         self.net = nn.Sequential(*layers)
         self.optimizer = torch.optim.AdamW(self.net.parameters())
         #######################################################
@@ -132,7 +132,6 @@ class RewardModel(nn.Module):
         obs, action = np2torch(obs), np2torch(action)
         obs, action = torch.unsqueeze(obs, 0), torch.unsqueeze(action, 0)
         reward = self.forward(obs, action)
-        # import pdb; pdb.set_trace()
         return reward.item()
         #######################################################
         #########          END YOUR CODE.          ############
@@ -161,17 +160,19 @@ class RewardModel(nn.Module):
         predicted_reward_trajectory_1 = self.forward(obs1, act1)
         predicted_reward_trajectory_2 = self.forward(obs2, act2)
 
+        label_clone = torch.clone(label)
+        one_minus_label = 1 - label
+        label = torch.cat((one_minus_label.unsqueeze(1), label_clone.unsqueeze(1)), axis=1)
+
         def bradley_terry_reward(reward_trajectory_1, reward_trajectory_2):
-            exp_rewards_term1 = torch.exp(torch.sum(reward_trajectory_1, axis=1))
-            exp_rewards_term2 = torch.exp(torch.sum(reward_trajectory_2, axis=1))
+            exp_rewards_term1 = torch.sum(reward_trajectory_1, axis=1)
+            exp_rewards_term2 = torch.sum(reward_trajectory_2, axis=1)
             return exp_rewards_term1, exp_rewards_term2
 
         p_1g2, p_2g1 = bradley_terry_reward(predicted_reward_trajectory_1, predicted_reward_trajectory_2)
         p_stacked = torch.stack((p_1g2, p_2g1), axis=1)
-       #  p_stacked = p_stacked.type(torch.LongTensor)
-#         import pdb; pdb.set_trace()
 
-        loss = torch.nn.functional.cross_entropy(p_stacked, label.long())
+        loss = torch.nn.functional.cross_entropy(p_stacked, label)
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -285,7 +286,6 @@ def main(args):
         custom_reward_env,
         lambda obs: agent.predict(obs)[0],
     )
-    # import pdb; pdb.set_trace()
     agent.learn(args.rl_steps, callback=eval_callback)
 
     # Log the results

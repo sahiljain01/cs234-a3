@@ -68,8 +68,7 @@ class ActionSequenceModel(nn.Module):
         #######################################################
         #########   YOUR CODE HERE - 3-9 lines.    ############
         input_dim = obs_dim + action_dim
-        # TODO: figure out action distribution sequence length
-        layers = [nn.Linear(input_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, segment_len)]
+        layers = [nn.Linear(obs_dim, hidden_dim), nn.ReLU(), nn.Linear(hidden_dim, segment_len * 2 * action_dim)]
         self.net = nn.Sequential(*layers)
         self.optimizer = torch.optim.AdamW(self.net.parameters(), lr=lr)
         #######################################################
@@ -112,7 +111,12 @@ class ActionSequenceModel(nn.Module):
 
         #######################################################
         #########   YOUR CODE HERE - 3-9 lines.    ############
-
+        mean, std = torch.split(net_out, self.segment_len * self.action_dim, dim=1)
+        mean = mean.reshape((net_out.shape[0], self.segment_len, self.action_dim))
+        log_std = std.reshape((net_out.shape[0], self.segment_len, self.action_dim))
+        mean = torch.tanh(mean)
+        log_std = torch.clamp(log_std, min=LOGSTD_MIN, max=LOGSTD_MAX)
+        std = torch.exp(log_std)
         #######################################################
         #########          END YOUR CODE.          ############
         return mean, std
@@ -141,7 +145,9 @@ class ActionSequenceModel(nn.Module):
         """
         #######################################################
         #########   YOUR CODE HERE - 1-5 lines.    ############
-
+        mean, std = self.forward(obs)
+        distr = D.Normal(mean, std)
+        return D.Independent(distr, 2)
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -165,7 +171,11 @@ class ActionSequenceModel(nn.Module):
         """
         #######################################################
         #########   YOUR CODE HERE - 2-6 lines.    ############
-
+        obs_to_torch = np2torch(obs)
+        action_distribution = self.distribution(np2torch(obs).unsqueeze(0))
+        action_sequence_sample = action_distribution.sample()
+        action_sequence_sample = torch.clamp(action_sequence_sample, min=-1, max=1)
+        return action_sequence_sample[0][0]
         #######################################################
         #########          END YOUR CODE.          ############
 
@@ -190,7 +200,9 @@ class SFT(ActionSequenceModel):
         """
         #######################################################
         #########   YOUR CODE HERE - 4-6 lines.    ############
-
+        action_distr_for_obs = self.distribution(obs)
+        log_probs = action_distr_for_obs.log_prob(actions)
+        loss = -1 * torch.mean(log_probs)
         #######################################################
         #########          END YOUR CODE.          ############
         return loss.item()
@@ -239,7 +251,19 @@ class DPO(ActionSequenceModel):
         """
         #######################################################
         #########   YOUR CODE HERE - 8-14 lines.   ############
+        with torch.no_grad():
+            ref_policy_action_distribution = ref_policy.distribution(obs)
+            ref_policy_actions_w_log_probs = ref_policy_action_distribution.log_prob(actions_w)
+            ref_policy_actions_l_log_probs = ref_policy_action_distribution.log_prob(actions_l)
+ 
+        curr_policy_action_distribution = self.distribution(obs)
+        curr_policy_actions_w_log_probs = curr_policy_action_distribution.log_prob(actions_w)
+        curr_policy_actions_l_log_probs = curr_policy_action_distribution.log_prob(actions_l)
 
+        loss = torch.nn.functional.logsigmoid(
+                self.beta * (curr_policy_actions_w_log_probs - ref_policy_actions_w_log_probs) - self.beta * (curr_policy_actions_l_log_probs - ref_policy_actions_l_log_probs))
+
+        loss = -1 * torch.mean(loss)
         #######################################################
         #########          END YOUR CODE.          ############
         return loss.item()
