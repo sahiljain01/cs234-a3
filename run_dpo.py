@@ -175,7 +175,7 @@ class ActionSequenceModel(nn.Module):
         action_distribution = self.distribution(np2torch(obs).unsqueeze(0))
         action_sequence_sample = action_distribution.sample()
         action_sequence_sample = torch.clamp(action_sequence_sample, min=-1, max=1)
-        return action_sequence_sample[0][0]
+        return action_sequence_sample[0][0].numpy()
         #######################################################
         #########          END YOUR CODE.          ############
 
